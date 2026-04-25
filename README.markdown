@@ -292,16 +292,6 @@ Examples:
           { "type": "command", "command": "~/.claude/hooks/stop.sh" }
         ]
       }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "INPUT=$(cat); DESC=$(echo \"$INPUT\" | jq -r '.task_description // .subagent_id // \"Task finished\"' | cut -c 1-120); ~/.claude/hooks/notify.sh \"Subagent Done\" \"$DESC\" /System/Library/Sounds/Submarine.aiff"
-          }
-        ]
-      }
     ]
   }
 }
@@ -316,7 +306,8 @@ Don't forget to `chmod +x ~/.claude/hooks/*.sh`.
 | `Notification` permission_prompt | Claude Code — Permission | `notification_message` from hook | Glass |
 | `Notification` idle_prompt | Claude Code — Waiting | `notification_message` from hook | Blow |
 | `Stop` | Claude Code — &lt;session/branch&gt; [&lt;tmux-window&gt;] | Latest user prompt (truncated to 160 chars) | Ping |
-| `SubagentStop` | Subagent Done | `task_description` from hook | Submarine |
+
+The `SubagentStop` hook is intentionally omitted — subagent completions are noisy and don't carry useful context for the human (you didn't ask the subagent for anything; Claude did). Add one back via the same pattern if you want it.
 
 ---
 
