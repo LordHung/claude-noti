@@ -9,11 +9,13 @@
 	<key>CFBundleIconFile</key>
 	<string>Terminal</string>
 	<key>CFBundleIdentifier</key>
-	<string>fr.julienxx.oss.terminal-notifier</string>
+	<string>com.anthropic.claudecode-notifier</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>${PRODUCT_NAME}</string>
+	<string>Claude Code</string>
+	<key>CFBundleDisplayName</key>
+	<string>Claude Code</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
