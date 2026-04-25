@@ -26,6 +26,30 @@ That's it. `make setup` builds the Claude-branded bundle, drops the binary + hoo
 
 After installation, **grant notification permission** to "Claude Code" in *System Settings → Notifications* — see the [permission gotcha](#macos-notification-permissions-critical) below. Without it, notifications fire silently or fall back to a path with no click handler.
 
+### No Xcode? Use the prebuilt binary instead
+
+Don't want to build from source? Grab the prebuilt `Claude Notifier.app` from the [latest release](https://github.com/LordHung/terminal-notifier/releases/latest):
+
+```bash
+git clone https://github.com/LordHung/terminal-notifier.git
+cd terminal-notifier
+
+# Download + unzip the prebuilt bundle into ~/.claude/hooks/
+mkdir -p ~/.claude/hooks
+curl -sL https://github.com/LordHung/terminal-notifier/releases/latest/download/Claude-Notifier-macos-v2.0.0-claude.zip \
+  -o /tmp/claude-notifier.zip
+ditto -xk /tmp/claude-notifier.zip ~/.claude/hooks/
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "$HOME/.claude/hooks/Claude Notifier.app"
+
+# Install the hook scripts + merge settings (skip the build step)
+make install-hooks settings           # no tmux
+# or
+make install-hooks install-tmux-hooks settings-tmux   # with tmux click navigation
+```
+
+The prebuilt is **not** signed or notarized — macOS Gatekeeper will warn the first time it runs; right-click → Open to bypass.
+
 ### What you get
 
 | Hook | Title format | Body | Sound |
