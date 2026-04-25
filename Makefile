@@ -63,6 +63,11 @@ build:
 	  MACOSX_DEPLOYMENT_TARGET=10.13 \
 	  CONFIGURATION_BUILD_DIR="$(BUILD_DIR)" \
 	  build | grep -E '(error:|warning:|BUILD)' || true
+	@# Xcode names the bundle after the target ("terminal-notifier.app").
+	@# Rename it to the user-facing "Claude Notifier.app" expected by install-app.
+	@if [ -d "$(BUILD_DIR)/terminal-notifier.app" ] && [ ! -d "$(BUILD_DIR)/$(APP_NAME)" ]; then \
+	  mv "$(BUILD_DIR)/terminal-notifier.app" "$(BUILD_DIR)/$(APP_NAME)"; \
+	fi
 	@test -d "$(BUILD_DIR)/$(APP_NAME)" || (echo "[error] build did not produce $(APP_NAME)"; exit 1)
 
 # ----------------------------------------------------------------------
