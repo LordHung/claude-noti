@@ -186,21 +186,80 @@ TMUX_BIN="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
 
 ```bash
 #!/bin/bash
-# Stop hook: extract the most recent real user prompt from the transcript
-# and pass it to notify.sh as the notification body.
+# Stop hook: build a notification title from
+#   1) the Claude Code session name (set via /rename, lives in
+#      ~/.claude/sessions/<pid>.json as `.name`)
+#   2) the tmux window name (set via tmux rename-window)
+# falling back to git branch / cwd basename if no session name is set.
+# Body is the most recent real user prompt from the transcript.
 
 INPUT=$(cat)
 TP=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
+PANE="${TMUX_PANE:-}"
 
-TASK="Task complete"
+# --- Claude Code session name (set via /rename) ---
+SESSION_NAME=""
+if [ -n "$SESSION_ID" ]; then
+  SESSION_NAME=$(jq -r --arg sid "$SESSION_ID" \
+    'select(.sessionId==$sid) | .name // empty' \
+    ~/.claude/sessions/*.json 2>/dev/null | head -1)
+fi
+
+# --- Fallback to git branch / cwd basename if no session name ---
+TASK=""
+if [ -n "$SESSION_NAME" ]; then
+  TASK="$SESSION_NAME"
+elif [ -n "$CWD" ] && [ -d "$CWD" ]; then
+  B=$(git -C "$CWD" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  if [ -n "$B" ] && [ "$B" != "HEAD" ]; then
+    TASK="$B"
+  else
+    TASK="$(basename "$CWD")"
+  fi
+fi
+
+# --- tmux window name ---
+WINDOW=""
+if [ -n "$PANE" ] && command -v tmux >/dev/null 2>&1; then
+  WINDOW=$(tmux display-message -p -t "$PANE" '#{window_name}' 2>/dev/null)
+fi
+
+# --- compose title ---
+if [ -n "$TASK" ] && [ -n "$WINDOW" ]; then
+  TITLE="Claude Code — $TASK [$WINDOW]"
+elif [ -n "$TASK" ]; then
+  TITLE="Claude Code — $TASK"
+elif [ -n "$WINDOW" ]; then
+  TITLE="Claude Code — $WINDOW"
+else
+  TITLE="Claude Code — Done"
+fi
+
+# --- Body: most recent real user prompt from transcript ---
+BODY="Task complete"
 if [ -f "$TP" ]; then
   E=$(jq -rs '[.[] | select(.type=="user" and (.message.content|type)=="string" and (.message.content|startswith("<")|not))] | last | .message.content // empty' "$TP" 2>/dev/null \
         | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//' | cut -c 1-160)
-  [ -n "$E" ] && [ "$E" != "null" ] && TASK="$E"
+  [ -n "$E" ] && [ "$E" != "null" ] && BODY="$E"
 fi
 
-exec ~/.claude/hooks/notify.sh "Claude Code — Done" "$TASK" /System/Library/Sounds/Ping.aiff
+exec ~/.claude/hooks/notify.sh "$TITLE" "$BODY" /System/Library/Sounds/Ping.aiff
 ```
+
+The Stop notification title shows, in order of preference:
+1. The Claude Code session name (set via `/rename github-issue-airdrop-implementation`)
+2. The git branch (when no session name is set)
+3. The cwd basename (when not in a git repo)
+4. "Done" (last resort)
+
+Plus the tmux window name in `[brackets]` as a suffix when running inside tmux.
+
+Examples:
+- `Claude Code — github-issue-airdrop-implementation [airdrop]`
+- `Claude Code — claude-code-branding [terminal-notifier]`
+- `Claude Code — Done`
 
 ### `~/.claude/settings.json` (hooks section)
 
@@ -256,7 +315,7 @@ Don't forget to `chmod +x ~/.claude/hooks/*.sh`.
 |---|---|---|---|
 | `Notification` permission_prompt | Claude Code — Permission | `notification_message` from hook | Glass |
 | `Notification` idle_prompt | Claude Code — Waiting | `notification_message` from hook | Blow |
-| `Stop` | Claude Code — Done | Latest user prompt (truncated to 160 chars) | Ping |
+| `Stop` | Claude Code — &lt;session/branch&gt; [&lt;tmux-window&gt;] | Latest user prompt (truncated to 160 chars) | Ping |
 | `SubagentStop` | Subagent Done | `task_description` from hook | Submarine |
 
 ---
