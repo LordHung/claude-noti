@@ -1,260 +1,364 @@
-# terminal-notifier
+# Claude Code Notifier (terminal-notifier fork)
 
-[![GitHub release](https://img.shields.io/github/release/julienXX/terminal-notifier.svg)](https://github.com/julienXX/terminal-notifier/releases)
+A Claude-branded fork of [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) for sending **macOS notifications from [Claude Code](https://docs.claude.com/en/docs/claude-code/) hooks** with **click-to-jump-back-to-tmux-pane** behavior.
 
-terminal-notifier is a command-line tool to send macOS User Notifications,
-which are available on macOS 10.10 and higher.
-
-
-## News
-
-[alerter](https://github.com/vjeantet/alerter) features were merged in terminal-notifier 1.7. This led to some issues and even more issues in the 1.8 release. We decided with [Valère Jeantet](https://github.com/vjeantet) to rollback this merge.
-
-From now on terminal-notifier won't have the sticky notification feature nor the actions buttons. If you need them please use [alerter](https://github.com/vjeantet/alerter). I also want to follow [semver](http://semver.org) hence this latest version starts at 2.0.0.
-
-Sticking to two smaller specialized tools will hopefully make them easier to maintain and less error prone.
-
-
-## Caveats
-
-* It is currently packaged as an application bundle, because `NSUserNotification`
-  does not work from a ‘Foundation tool’. [radar://11956694](radar://11956694)
-
-* If you intend to package terminal-notifier with your app to distribute it on the Mac App Store, please use 1.5.2; version 1.6.0+ uses a private method override, which is not allowed in the App Store Guidelines.
-
-* If you're using macOS < 10.10 you should use terminal-notifier 1.6.3.
-
-* If you're looking for sticky notifications or more actions on a notification please use [alerter](https://github.com/vjeantet/alerter)
-
-## Download
-
-Prebuilt binaries are available from the
-[releases section](https://github.com/julienXX/terminal-notifier/releases).
-
-Or if you want to use this from
-[Ruby](https://github.com/julienXX/terminal-notifier/tree/master/Ruby), you can
-install it through RubyGems:
+When Claude finishes a task or needs your input, you get a native macOS notification with the Claude icon, the actual task content, and a single click takes you straight back to the tmux pane where that Claude session lives.
 
 ```
-$ [sudo] gem install terminal-notifier
+┌───────────────────────────────────────────────────────────────┐
+│ ✦  Claude Code — Done                                         │
+│    refactor auth middleware to use new session token storage  │
+└───────────────────────────────────────────────────────────────┘
+        ↑ click → switch to tmux session:window.pane in Alacritty
 ```
 
-You can also install it via [Homebrew](https://github.com/mxcl/homebrew):
+---
+
+## What this fork changes vs. upstream
+
+| Property | Upstream `terminal-notifier` | This fork |
+|---|---|---|
+| `CFBundleIdentifier` | `fr.julienxx.oss.terminal-notifier` | `com.anthropic.claudecode-notifier` |
+| `CFBundleName` / `CFBundleDisplayName` | `terminal-notifier` | `Claude Code` |
+| App icon (`Terminal.icns`) | macOS terminal icon | Claude logo |
+| CLI executable name | `terminal-notifier` | `terminal-notifier` (unchanged — drop-in replacement) |
+| Source code | (no changes) | (no changes) |
+
+Renaming the bundle ID is the important part: macOS treats this as a separate app in *System Settings → Notifications*, so you can grant notification permission to **Claude Code** without affecting any other `terminal-notifier` install.
+
+---
+
+## Why click-handlers needed a custom binary
+
+The default Claude Code Notification hook uses `osascript -e 'display notification ...'`, which on macOS has **no click handler** — clicks open the Script Editor instead of doing something useful. `terminal-notifier`'s `-execute` flag fixes that, but to display notifications under a "Claude Code" identity (with the Claude icon and "Claude Code" header) you need a separately-branded bundle. Hence this fork.
+
+---
+
+## Prerequisites
+
+| Tool | Required for | macOS install |
+|---|---|---|
+| Xcode + Command Line Tools | Building the bundle | App Store, then `xcode-select --install` |
+| [Claude Code](https://docs.claude.com/en/docs/claude-code/) | The whole point | `npm i -g @anthropic-ai/claude-code` |
+| `tmux` | Click-to-jump-back-to-pane | `brew install tmux` |
+| [Alacritty](https://alacritty.org/) (or any terminal) | Where Claude runs | `brew install --cask alacritty` |
+| `jq` | Stop-hook transcript parsing | `brew install jq` |
+
+---
+
+## Build & install
+
+```bash
+# 1. Clone this fork
+git clone https://github.com/LordHung/terminal-notifier.git ~/code/terminal-notifier
+cd ~/code/terminal-notifier
+
+# 2. Build (needs Xcode + Command Line Tools)
+xcodebuild \
+  -project "Terminal Notifier.xcodeproj" \
+  -scheme "Terminal Notifier" \
+  -configuration Release \
+  MACOSX_DEPLOYMENT_TARGET=10.13 \
+  PRODUCT_BUNDLE_IDENTIFIER=com.anthropic.claudecode-notifier \
+  CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+  build
+
+# 3. Copy the built bundle to a stable location
+SRC=$(find ~/Library/Developer/Xcode/DerivedData \
+        -name "terminal-notifier.app" -path "*Release*" | head -1)
+mkdir -p ~/.claude/hooks
+cp -R "$SRC" "$HOME/.claude/hooks/Claude Notifier.app"
+
+# 4. Register with LaunchServices so macOS shows it in Notifications settings
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "$HOME/.claude/hooks/Claude Notifier.app"
+
+# 5. Smoke-test
+"$HOME/.claude/hooks/Claude Notifier.app/Contents/MacOS/terminal-notifier" \
+  -title "Claude Code" -message "Install OK"
 ```
-$ brew install terminal-notifier
+
+---
+
+## macOS notification permissions (CRITICAL)
+
+This step is the #1 source of "I clicked the notification but nothing happened" — because if notifications are denied, macOS still renders the notification through a **fallback path that has no click handler**. There is no error; clicks just silently no-op.
+
+1. Open **System Settings → Notifications**.
+2. Find **Claude Code** in the app list (it appears after step 4 above; you may need to fire one notification first).
+3. Set:
+   - **Allow notifications:** ON
+   - **Alert style:** **Persistent** (not Banner — Banner notifications can dismiss before you click)
+   - Show in: Desktop, Notification Center (your choice)
+
+If "Claude Code" is missing from the list, run the smoke-test command from step 5 above to register it.
+
+---
+
+## Claude Code hooks setup
+
+This is the bit that wires the notifier into Claude Code so it fires on the right events with the right content, and clicks navigate back to the originating tmux pane.
+
+### File layout
+
+```
+~/.claude/
+├── settings.json          # Claude Code hooks configuration
+└── hooks/
+    ├── Claude Notifier.app/   # the rebuilt bundle (from build step above)
+    ├── claude-icon.png        # only used by the homebrew terminal-notifier fallback
+    ├── notify.sh              # main notification helper
+    ├── click-action.sh        # tmux focus + Alacritty activation on click
+    └── stop.sh                # Stop-hook helper that extracts task content
 ```
 
-## Usage
+### `~/.claude/hooks/notify.sh`
+
+```bash
+#!/bin/bash
+# Usage: notify.sh <title> <message> [sound_file]
+# Reads $TMUX_PANE inherited from the Claude Code process so clicking the
+# notification jumps to the originating tmux window/pane in Alacritty.
+
+TITLE="${1:-Claude Code}"
+MSG="${2:-Notification}"
+SOUND="${3:-}"
+
+[ -n "$SOUND" ] && [ -f "$SOUND" ] && afplay "$SOUND" &
+
+PANE="${TMUX_PANE:-}"
+TMUX_BIN="$(command -v tmux)"
+ICON="$HOME/.claude/hooks/claude-icon.png"
+
+# Prefer custom-rebuilt notifier (Claude-branded) over homebrew terminal-notifier.
+CUSTOM_TN="$HOME/.claude/hooks/Claude Notifier.app/Contents/MacOS/terminal-notifier"
+if [ -x "$CUSTOM_TN" ]; then
+  TN="$CUSTOM_TN"
+else
+  TN="$(command -v terminal-notifier)"
+fi
+
+if [ -n "$PANE" ] && [ -n "$TN" ] && [ -n "$TMUX_BIN" ]; then
+  WINDOW_TARGET="$("$TMUX_BIN" display-message -p -t "$PANE" '#{session_name}:#{window_index}' 2>/dev/null)"
+  SESSION="$("$TMUX_BIN" display-message -p -t "$PANE" '#{session_name}' 2>/dev/null)"
+  if [ -n "$WINDOW_TARGET" ]; then
+    APPICON_FLAG=()
+    if [ "$TN" != "$CUSTOM_TN" ] && [ -f "$ICON" ]; then
+      APPICON_FLAG=(-appIcon "file://$ICON")
+    fi
+    "$TN" \
+      -title "$TITLE" \
+      -message "$MSG" \
+      "${APPICON_FLAG[@]}" \
+      -execute "$HOME/.claude/hooks/click-action.sh '$PANE' '$WINDOW_TARGET' '$SESSION'" \
+      >/dev/null 2>&1
+    exit 0
+  fi
+fi
+
+# Fallback: plain osascript notification (no click handler).
+osascript -e "display notification \"${MSG//\"/\\\"}\" with title \"${TITLE//\"/\\\"}\""
+```
+
+### `~/.claude/hooks/click-action.sh`
+
+```bash
+#!/bin/bash
+# Invoked by terminal-notifier -execute when a Claude notification is clicked.
+# Args: <pane-id> <window-target> <session-name>
+PANE="$1"
+WINDOW="$2"
+SESSION="$3"
+
+exec >> /tmp/nf-click.log 2>&1
+echo "--- click $(date) pane=$PANE window=$WINDOW session=$SESSION ---"
+
+TMUX_BIN="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
+"$TMUX_BIN" switch-client -t "$SESSION"
+"$TMUX_BIN" select-window -t "$WINDOW"
+"$TMUX_BIN" select-pane -t "$PANE"
+/usr/bin/open -a Alacritty
+```
+
+> Replace `Alacritty` with your terminal app name if different (`Terminal`, `iTerm`, `Ghostty`, `WezTerm`, etc.).
+
+### `~/.claude/hooks/stop.sh`
+
+```bash
+#!/bin/bash
+# Stop hook: extract the most recent real user prompt from the transcript
+# and pass it to notify.sh as the notification body.
+
+INPUT=$(cat)
+TP=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+
+TASK="Task complete"
+if [ -f "$TP" ]; then
+  E=$(jq -rs '[.[] | select(.type=="user" and (.message.content|type)=="string" and (.message.content|startswith("<")|not))] | last | .message.content // empty' "$TP" 2>/dev/null \
+        | tr '\n' ' ' | tr -s ' ' | sed 's/^ //;s/ $//' | cut -c 1-160)
+  [ -n "$E" ] && [ "$E" != "null" ] && TASK="$E"
+fi
+
+exec ~/.claude/hooks/notify.sh "Claude Code — Done" "$TASK" /System/Library/Sounds/Ping.aiff
+```
+
+### `~/.claude/settings.json` (hooks section)
+
+```json
+{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); MSG=$(echo \"$INPUT\" | jq -r '.notification_message // \"Claude needs your permission\"'); ~/.claude/hooks/notify.sh \"Claude Code — Permission\" \"$MSG\" /System/Library/Sounds/Glass.aiff"
+          }
+        ]
+      },
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); MSG=$(echo \"$INPUT\" | jq -r '.notification_message // \"Claude is waiting for your input\"'); ~/.claude/hooks/notify.sh \"Claude Code — Waiting\" \"$MSG\" /System/Library/Sounds/Blow.aiff"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/stop.sh" }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); DESC=$(echo \"$INPUT\" | jq -r '.task_description // .subagent_id // \"Task finished\"' | cut -c 1-120); ~/.claude/hooks/notify.sh \"Subagent Done\" \"$DESC\" /System/Library/Sounds/Submarine.aiff"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Don't forget to `chmod +x ~/.claude/hooks/*.sh`.
+
+### Hook coverage
+
+| Hook | Title | Message source | Sound |
+|---|---|---|---|
+| `Notification` permission_prompt | Claude Code — Permission | `notification_message` from hook | Glass |
+| `Notification` idle_prompt | Claude Code — Waiting | `notification_message` from hook | Blow |
+| `Stop` | Claude Code — Done | Latest user prompt (truncated to 160 chars) | Ping |
+| `SubagentStop` | Subagent Done | `task_description` from hook | Submarine |
+
+---
+
+## How click-to-tmux-pane works
 
 ```
-$ ./terminal-notifier.app/Contents/MacOS/terminal-notifier -[message|group|list] [VALUE|ID|ID] [options]
+┌───────────────────────────────────────────────────────────────┐
+│ Claude session running in tmux pane %293 (Alacritty)          │
+└───────────────────────────────────────────────────────────────┘
+                            │
+                  Stop hook fires after Claude responds
+                            │
+                            ▼
+        notify.sh captures $TMUX_PANE = %293
+        resolves to session "9", window "9:28"
+        bakes into terminal-notifier -execute command:
+            click-action.sh '%293' '9:28' '9'
+                            │
+                            ▼
+          terminal-notifier shows native notification
+                            │
+                  user clicks notification body
+                            │
+                            ▼
+                  click-action.sh runs:
+            tmux switch-client -t 9
+            tmux select-window -t 9:28
+            tmux select-pane -t %293
+            open -a Alacritty
+                            │
+                            ▼
+        ┌─────────────────────────────────────────┐
+        │ Alacritty foreground, tmux on pane %293 │
+        └─────────────────────────────────────────┘
 ```
 
-In order to use terminal-notifier, you have to call the binary _inside_ the
-application bundle.
+**Key insight:** `$TMUX_PANE` is captured **at hook spawn time** (when Claude Code spawns the hook, it inherits the env from the tmux client). The pane ID is then baked into the click command as a string literal, so even though terminal-notifier's click subshell has no `$TMUX` env, it knows exactly which pane to navigate to.
 
-The Ruby gem, which wraps this tool, _does_ have a bin wrapper. If installed
-you can simply do:
+---
 
+## Customization
+
+### Different terminal emulator
+
+Edit `~/.claude/hooks/click-action.sh` and replace `Alacritty` with your terminal app name (e.g., `Terminal`, `iTerm`, `Ghostty`, `WezTerm`). Use the exact name as it appears in `/Applications/`.
+
+### No tmux (single shell)
+
+Skip `click-action.sh` entirely. In `notify.sh`, replace the `-execute` value with just `open -a YourTerminal`. Click will only foreground the terminal — no pane navigation.
+
+### Customize the notifier icon
+
+Replace `Terminal.icns` in this repo with a different `.icns` file (build via `iconutil -c icns YourIcon.iconset`), then rebuild and re-install.
+
+### Per-message icon override
+
+If you want a different icon per notification (without rebuilding), pass `-appIcon "file:///path/to/icon.png"` to `terminal-notifier`. The custom-rebuilt bundle's default icon will be overridden.
+
+---
+
+## Troubleshooting
+
+### "I see notifications but clicks don't navigate"
+
+99% of the time this is the **notification permission gotcha**. Open System Settings → Notifications → Claude Code, and make sure:
+- Allow notifications is ON
+- Alert style is Persistent
+
+If notifications are off, macOS routes them through a fallback path that has no click handler. You'll see them but clicks silently no-op.
+
+### "I see no notifications at all"
+
+Run the smoke test:
+```bash
+"$HOME/.claude/hooks/Claude Notifier.app/Contents/MacOS/terminal-notifier" \
+  -title "Test" -message "Hello"
 ```
-$ terminal-notifier -[message|group|list] [VALUE|ID|ID] [options]
-```
 
-This will obviously be a bit slower than using the tool without the wrapper.
+If you still see nothing, check:
+- macOS Focus / Do Not Disturb is off
+- LaunchServices recognizes the bundle: `lsregister -dump | grep claudecode-notifier`
 
-If you'd like notifications to stay on the screen until dismissed, go to System Preferences -> Notifications -> terminal-notifier and change the style from Banners to Alerts. You cannot do this on a per-notification basis.
+### "Click jumps to Alacritty but wrong tmux pane"
 
+Look at `/tmp/nf-click.log` — it logs every click with the pane it tried to navigate to. Common causes:
+- Claude Code wasn't launched from inside tmux when the hook fired (no `$TMUX_PANE` to capture)
+- The pane was killed between the notification firing and you clicking
+- Multiple tmux servers (rare)
 
-### Example Uses
+### "I want to use the homebrew `terminal-notifier` instead of rebuilding"
 
-Display piped data with a sound:
-```
-$ echo 'Piped Message Data!' | terminal-notifier -sound default
-```
+Skip the build steps. `notify.sh` will fall back to whatever `terminal-notifier` is on `$PATH`. You'll see "terminal-notifier" as the notification header (with the terminal icon), but click-to-tmux still works.
 
-![Example 1](assets/Example_1.png)
+---
 
-Use a custom icon:
-```
-$ terminal-notifier -title ProjectX -subtitle "new tag detected" -message "Finished" -appIcon http://vjeantet.fr/images/logo.png
-```
+## Credits
 
-![Example 3](assets/Example_3.png)
+This fork is a thin rebrand on top of [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) by [Eloy Durán](https://github.com/alloy) and [Julien Blanchard](https://github.com/julienXX). All the actual notification work is theirs — this fork only changes the bundle identity to play nicely with macOS's per-app permission model so it can be branded as "Claude Code".
 
-Open an URL when the notification is clicked:
-```
-$ terminal-notifier -title '💰' -message 'Check your Apple stock!' -open 'http://finance.yahoo.com/q?s=AAPL'
-```
-
-![Example 4](assets/Example_4.png)
-
-Open an app when the notification is clicked:
-```
-$ terminal-notifier -group 'address-book-sync' -title 'Address Book Sync' -subtitle 'Finished' -message 'Imported 42 contacts.' -activate 'com.apple.AddressBook'
-```
-
-![Example 5](assets/Example_5.png)
-
-
-### Options
-
-At a minimum, you must specify either the `-message` , the `-remove`, or the
-`-list` option.
-
--------------------------------------------------------------------------------
-
-`-message VALUE`  **[required]**
-
-The message body of the notification.
-
-If you pipe data into terminal-notifier, you can omit this option,
-and the piped data will become the message body instead.
-
--------------------------------------------------------------------------------
-
-`-title VALUE`
-
-The title of the notification. This defaults to ‘Terminal’.
-
--------------------------------------------------------------------------------
-
-`-subtitle VALUE`
-
-The subtitle of the notification.
-
--------------------------------------------------------------------------------
-
-`-sound NAME`
-
-Play the `NAME` sound when the notification appears.
-Sound names are listed in `/System/Library/Sounds`.
-
-Use the special `NAME` “default” for the default notification sound.
-
--------------------------------------------------------------------------------
-
-`-group ID`
-
-Specifies the notification’s ‘group’. For any ‘group’, only _one_
-notification will ever be shown, replacing previously posted notifications.
-
-A notification can be explicitly removed with the `-remove` option (see
-below).
-
-Example group IDs:
-
-* The sender’s name (to scope the notifications by tool).
-* The sender’s process ID (to scope the notifications by a unique process).
-* The current working directory (to scope notifications by project).
-
--------------------------------------------------------------------------------
-
-`-remove ID`  **[required]**
-
-Remove a previous notification from the `ID` ‘group’, if one exists.
-
-Use the special `ID` “ALL” to remove all messages.
-
--------------------------------------------------------------------------------
-
-`-list ID` **[required]**
-
-Lists details about the specified ‘group’ `ID`.
-
-Use the special `ID` “ALL” to list details about all currently active messages.
-
-The output of this command is tab-separated, which makes it easy to parse.
-
--------------------------------------------------------------------------------
-
-`-activate ID`
-
-Activate the application specified by `ID` when the user clicks the
-notification.
-
-You can find the bundle identifier (`CFBundleIdentifier`) of an application in its `Info.plist` file
-_inside_ the application bundle.
-
-Examples application IDs are:
-
-* `com.apple.Terminal` to activate Terminal.app
-* `com.apple.Safari` to activate Safari.app
-
--------------------------------------------------------------------------------
-
-`-sender ID`
-
-Fakes the sender application of the notification. This uses the specified
-application’s icon, and will launch it when the notification is clicked.
-
-Using this option fakes the sender application, so that the notification system
-will launch that application when the notification is clicked. Because of this
-it is important to note that you cannot combine this with options like
-`-execute` and `-activate` which depend on the sender of the notification to be
-‘terminal-notifier’ to perform its work.
-
-For information on the `ID`, see the `-activate` option.
-
--------------------------------------------------------------------------------
-
-`-appIcon PATH`
-
-Specify an image `PATH` to display instead of the application icon.
-
-**WARNING: This option is subject to change, since it relies on a private method.**
-
--------------------------------------------------------------------------------
-
-`-contentImage PATH`
-
-Specify an image `PATH` to attach inside of the notification.
-
-**WARNING: This option is subject to change since it relies on a private method.**
-
--------------------------------------------------------------------------------
-
-`-open URL`
-
-Open `URL` when the user clicks the notification. This can be a web or file URL,
-or any custom URL scheme.
-
--------------------------------------------------------------------------------
-
-`-execute COMMAND`
-
-Run the shell command `COMMAND` when the user clicks the notification.
-
--------------------------------------------------------------------------------
-
-`-ignoreDnD`
-
-Ignore Do Not Disturb settings and unconditionally show the notification.
-
-**WARNING: This option is subject to change since it relies on a private method.**
+The Claude logo and the "Claude Code" name are trademarks of [Anthropic](https://anthropic.com). This fork is unaffiliated with Anthropic — it's a personal customization for the [Claude Code](https://docs.claude.com/en/docs/claude-code/) CLI.
 
 ## License
 
-All the works are available under the MIT license. **Except** for
-‘Terminal.icns’, which is a copy of Apple’s Terminal.app icon and as such is
-copyright of Apple.
-
-Copyright (C) 2012-2017 Eloy Durán <eloy.de.enige@gmail.com>, Julien Blanchard
-<julien@sideburns.eu>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-of the Software, and to permit persons to whom the Software is furnished to do
-so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+MIT, same as upstream. See [`LICENSE.md`](LICENSE.md).
