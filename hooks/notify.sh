@@ -17,6 +17,10 @@ SOUND="${3:-}"
 
 [ -n "$SOUND" ] && [ -f "$SOUND" ] && afplay "$SOUND" &
 
+# Fan out to Telegram in the background. No-op when telegram.env isn't set up.
+TGSEND="$HOME/.claude/hooks/telegram-send.sh"
+[ -x "$TGSEND" ] && "$TGSEND" "$TITLE" "$MSG" >/dev/null 2>&1 &
+
 PANE="${TMUX_PANE:-}"
 TMUX_BIN="$(command -v tmux)"
 ICON="$HOME/.claude/hooks/claude-icon.png"

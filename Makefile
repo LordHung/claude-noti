@@ -1,9 +1,10 @@
 # Claude Code notifier — install Makefile.
 #
 # Common usage:
-#   make setup        # build + install everything (no tmux click navigation)
-#   make setup-tmux   # same as `setup`, plus tmux click-back-to-pane wiring
-#   make uninstall    # remove the .app, hook scripts, and our hook entries
+#   make setup            # build + install everything (no tmux click navigation)
+#   make setup-tmux       # same as `setup`, plus tmux click-back-to-pane wiring
+#   make setup-telegram   # mirror notifications to Telegram (uses ./.env)
+#   make uninstall        # remove the .app, hook scripts, and our hook entries
 #
 # Prerequisites: Xcode command line tools, jq (`brew install jq`).
 # Tmux support also assumes you launch Claude Code from inside a tmux pane.
@@ -15,20 +16,22 @@ PROJECT       = Terminal Notifier.xcodeproj
 BUILD_DIR     = $(CURDIR)/build/Release
 LSREGISTER    = /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
-HOOK_SCRIPTS  = notify.sh build-title.sh notification.sh stop.sh
+HOOK_SCRIPTS  = notify.sh build-title.sh notification.sh stop.sh telegram-send.sh
 TMUX_SCRIPTS  = click-action.sh
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-tmux build install-app install-hooks install-tmux-hooks settings settings-tmux uninstall clean check-deps
+.PHONY: help setup setup-tmux setup-telegram uninstall-telegram build install-app install-hooks install-tmux-hooks settings settings-tmux uninstall clean check-deps
 
 help:
 	@echo "Claude Code notifier — Makefile targets"
 	@echo ""
-	@echo "  make setup        Build + install (no tmux click navigation)"
-	@echo "  make setup-tmux   Build + install + tmux click-back-to-pane wiring"
-	@echo "  make uninstall    Remove the .app, hook scripts, and hook entries"
-	@echo "  make build        Build Claude Notifier.app only"
-	@echo "  make clean        Remove build artifacts"
+	@echo "  make setup              Build + install (no tmux click navigation)"
+	@echo "  make setup-tmux         Build + install + tmux click-back-to-pane wiring"
+	@echo "  make setup-telegram     Mirror notifications to Telegram (run after setup)"
+	@echo "  make uninstall          Remove the .app, hook scripts, and hook entries"
+	@echo "  make uninstall-telegram Remove only the Telegram config (~/.claude/hooks/telegram.env)"
+	@echo "  make build              Build Claude Notifier.app only"
+	@echo "  make clean              Remove build artifacts"
 	@echo ""
 	@echo "Install prefix: $(PREFIX)"
 
@@ -48,6 +51,17 @@ setup-tmux: check-deps build install-app install-hooks install-tmux-hooks settin
 	@echo "[done] Claude Code notifications + tmux click navigation are wired up."
 	@echo "       Notifications fired from inside tmux will jump back to the"
 	@echo "       originating pane on click."
+
+setup-telegram: install-hooks
+	@bash scripts/setup-telegram.sh
+
+uninstall-telegram:
+	@if [ -f "$(PREFIX)/telegram.env" ]; then \
+	  echo "[uninstall] removing $(PREFIX)/telegram.env"; \
+	  rm -f "$(PREFIX)/telegram.env"; \
+	else \
+	  echo "[uninstall] $(PREFIX)/telegram.env not found — nothing to do"; \
+	fi
 
 # ----------------------------------------------------------------------
 # Building

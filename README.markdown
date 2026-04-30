@@ -103,11 +103,13 @@ The default Claude Code Notification hook uses `osascript -e 'display notificati
 ## Makefile targets
 
 ```text
-make setup        Build + install (no tmux click navigation)
-make setup-tmux   Build + install + tmux click-back-to-pane wiring
-make uninstall    Remove the .app, hook scripts, and hook entries
-make build        Build Claude Notifier.app only
-make clean        Remove build artifacts
+make setup              Build + install (no tmux click navigation)
+make setup-tmux         Build + install + tmux click-back-to-pane wiring
+make setup-telegram     Mirror notifications to Telegram (run after setup)
+make uninstall          Remove the .app, hook scripts, and hook entries
+make uninstall-telegram Remove only the Telegram config
+make build              Build Claude Notifier.app only
+make clean              Remove build artifacts
 ```
 
 `make setup` runs the full pipeline:
@@ -144,6 +146,40 @@ If "Claude Code" is missing from the list, fire the smoke-test:
 
 ---
 
+## Mirror to Telegram (optional)
+
+`make setup-telegram` adds a second delivery channel: every notification that fires on macOS is also DMd to you on Telegram. Useful when you walk away from the laptop.
+
+**One-time setup:**
+
+1. Talk to [@BotFather](https://t.me/BotFather), `/newbot`, copy the HTTP API token.
+2. Drop it into `.env` at the repo root (gitignored — see [`.env.example`](./.env.example)):
+   ```env
+   TELEGRAM_TOKEN=123456:ABC...
+   TELEGRAM_URL=https://api.telegram.org
+   ```
+3. Run:
+   ```bash
+   make setup-telegram
+   ```
+   The script verifies the token via `/getMe`, prints the bot's `@username`, and asks you to send any message to it. After you press Enter, it auto-discovers your `chat_id` from `/getUpdates` and writes `~/.claude/hooks/telegram.env` (mode 600). It then sends a confirmation message so you can verify end-to-end delivery.
+
+After that, every Stop / Permission / Waiting notification is fanned out:
+- macOS bubble (with click-back-to-tmux-pane if `setup-tmux` is in use)
+- Telegram message: `**<title>**\n<body>` (HTML mode, web previews off)
+
+The Telegram call runs async in the background — it never blocks the macOS notification or slows the Claude turn. If the network is flaky, the macOS notification still fires; the Telegram call just silently times out (5s max).
+
+**To turn it off without touching the rest of the install:**
+
+```bash
+make uninstall-telegram
+```
+
+This removes only `~/.claude/hooks/telegram.env`. The `telegram-send.sh` helper stays in place but no-ops without that file, so re-enabling later is just `make setup-telegram` again.
+
+---
+
 ## File layout after install
 
 ```
@@ -156,6 +192,8 @@ If "Claude Code" is missing from the list, fire the smoke-test:
     ├── build-title.sh            # session-name + tmux-window title builder
     ├── notification.sh           # Notification-hook handler (Permission / Waiting)
     ├── stop.sh                   # Stop-hook handler (Done + last prompt)
+    ├── telegram-send.sh          # forwards every notification to Telegram (no-op when telegram.env is missing)
+    ├── telegram.env              # token + chat_id (mode 600, written by `make setup-telegram`)
     └── click-action.sh           # tmux pane navigation on click (setup-tmux only)
 ```
 
