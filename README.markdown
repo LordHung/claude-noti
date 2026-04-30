@@ -1,18 +1,24 @@
-# Claude Code Notifier (terminal-notifier fork)
+# claude-noti
 
-A Claude-branded fork of [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) that wires native **macOS notifications** into [Claude Code](https://docs.claude.com/en/docs/claude-code/) hooks — and (optionally) makes a click on the notification jump back to the originating **tmux pane**.
+A Claude-branded fork of [`terminal-notifier`](https://github.com/julienXX/terminal-notifier) that wires native **macOS notifications** into [Claude Code](https://docs.claude.com/en/docs/claude-code/) hooks, mirrors them to **Telegram**, and (optionally) makes a click on the macOS notification jump back to the originating **tmux pane**.
 
-When Claude finishes a task or needs your input, you get a native macOS notification with the Claude icon, the actual task content, and (with tmux mode) one click takes you straight back to the pane where that Claude session lives.
+When Claude finishes a task or needs your input, you get:
+
+- A native macOS notification with the Claude icon and the actual task content
+- (Optional) One click jumps back to the tmux pane where that session lives
+- (Optional) The same notification mirrored to your Telegram bot — so you still see it when you've stepped away from the laptop
 
 ![Three Claude Code notifications stacked in macOS Notification Center: Done, Waiting, Permission](docs/screenshots/notifications.png)
+
+![Same notification arriving as a Telegram message from @claude_lord_bot](docs/screenshots/telegram-notification.png)
 
 ---
 
 ## Quick start
 
 ```bash
-git clone https://github.com/LordHung/terminal-notifier.git
-cd terminal-notifier
+git clone https://github.com/LordHung/claude-noti.git
+cd claude-noti
 
 # Default install — no tmux integration
 make setup
@@ -25,30 +31,6 @@ make setup-tmux
 That's it. `make setup` builds the Claude-branded bundle, drops the binary + hook scripts into `~/.claude/hooks/`, registers the bundle with macOS LaunchServices, and merges the right `Notification` + `Stop` hook entries into `~/.claude/settings.json` (preserving any other hooks you already have, with a timestamped backup).
 
 After installation, **grant notification permission** to "Claude Code" in *System Settings → Notifications* — see the [permission gotcha](#macos-notification-permissions-critical) below. Without it, notifications fire silently or fall back to a path with no click handler.
-
-### No Xcode? Use the prebuilt binary instead
-
-Don't want to build from source? Grab the prebuilt `Claude Notifier.app` from the [latest release](https://github.com/LordHung/terminal-notifier/releases/latest):
-
-```bash
-git clone https://github.com/LordHung/terminal-notifier.git
-cd terminal-notifier
-
-# Download + unzip the prebuilt bundle into ~/.claude/hooks/
-mkdir -p ~/.claude/hooks
-curl -sL https://github.com/LordHung/terminal-notifier/releases/latest/download/Claude-Notifier-macos-v2.0.0-claude.zip \
-  -o /tmp/claude-notifier.zip
-ditto -xk /tmp/claude-notifier.zip ~/.claude/hooks/
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -f "$HOME/.claude/hooks/Claude Notifier.app"
-
-# Install the hook scripts + merge settings (skip the build step)
-make install-hooks settings           # no tmux
-# or
-make install-hooks install-tmux-hooks settings-tmux   # with tmux click navigation
-```
-
-The prebuilt is **not** signed or notarized — macOS Gatekeeper will warn the first time it runs; right-click → Open to bypass.
 
 ### What you get
 
@@ -149,6 +131,8 @@ If "Claude Code" is missing from the list, fire the smoke-test:
 ## Mirror to Telegram (optional)
 
 `make setup-telegram` adds a second delivery channel: every notification that fires on macOS is also DMd to you on Telegram. Useful when you walk away from the laptop.
+
+![Telegram chat with @claude_lord_bot showing "Telegram notifications are wired up" and a follow-up "Claude Code — Waiting" message](docs/screenshots/telegram-notification.png)
 
 **One-time setup:**
 
